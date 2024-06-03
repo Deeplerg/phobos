@@ -1,0 +1,250 @@
+﻿@using Phobos.Core
+@using Phobos.Core.Drawing
+@using SixLabors.ImageSharp
+@using Point = System.Drawing.Point
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@inject ILogger<Calculator> Logger;
+@inject GraphCanvas Canvas;
+@inject JsInteropService Js;
+
+<LoadingProgress>
+    <main>
+        <div class="is-flex is-flex-wrap-wrap-reverse is-justify-content-center">
+            <nav class="panel functions-panel is-flex-grow-2">
+                <p class="panel-heading functions-panel-heading">
+                    Functions
+                </p>
+                @for (int i = 0; i < _functions.Count; i++)
+                {
+                    int capturedIndex = i;
+                    var function = _functions[capturedIndex];
+                    
+                    <div class="panel-block function-input-block">
+                        <p class="control is-flex is-justify-content-space-evenly is-align-items-center">
+                            <input 
+                                class="input function-color-selection-input mx-1
+                                @(function.IsIncorrectInput ? "is-danger" : string.Empty)"
+                                type="color" 
+                                value="#@(function.Function.Color.ToHex()[..6])"
+                                @oninput=@(args => FunctionColorChanged(args, capturedIndex))/>
+                            
+                            <b class="mx-1">y=</b>
+                            
+                            <input
+                                class="input
+                                @(function.IsIncorrectInput ? "is-danger" : string.Empty)"
+                                type="text"
+                                placeholder="x"
+                                value="@(function.Function.Input)"
+                                @onchange=@(args => FunctionInputChanged(args, capturedIndex))/>
+
+                            <button class="button mx-1" @onclick=@(() => RemoveFunction(capturedIndex))>
+                                <span class="icon">
+                                    <img src="cross.svg" alt="Remove"/>
+                                </span>
+                            </button>
+                        </p>
+                    </div>
+                }
+                <div class="panel-block">
+                    <p class="control">
+                        <button class="button" @onclick="() => AddFunction()">
+                            <span class="icon">
+                                <img src="plus.svg" alt="Add"/>
+                            </span>
+                        </button>
+                    </p>
+                </div>
+                <div class="panel-block function-input-block">
+                    <p class="control is-flex is-justify-content-space-evenly is-align-items-center">
+                        <input
+                            class="input mx-1"
+                            type="text"
+                            placeholder="Loading..."
+                            value="@(originPointX)"
+                            @onchange=@(args => OriginXInputChanged(args))/>
+
+                        <input
+                            class="input mx-1"
+                            type="text"
+                            placeholder="Loading..."
+                            value="@(originPointY)"
+                            @onchange=@(args => OriginYInputChanged(args))/>
+
+                        <input
+                            class="input mx-1"
+                            type="text"
+                            placeholder="Loading..."
+                            value="@(scale)"
+                            @onchange=@(args => ScaleInputChanged(args))/>
+                    </p>
+                </div>
+            </nav>
+            <div class="plane is-flex-grow-1" id="canvas-container">
+                <img 
+                    class="plane is-flex-grow-1 has-background-grey" 
+                    src="@_imageBase64" 
+                    alt="Plane" 
+                    id="canvas-image"/>
+            </div>
+        </div>
+    </main>
+</LoadingProgress>
+
+@code {
+    private readonly List<InputFunction> _functions = new();
+    private string _imageBase64 = string.Empty;
+    private readonly Random _rnd = new();
+    private int? originPointX;
+    private int? originPointY;
+    private double scale = 1;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        await AddFunction(Color.Red, redraw: false);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Redraw(getSizeFromCanvas: true);
+            StateHasChanged();
+        }
+    }
+
+    private async Task AddFunction(Color? color = null, bool redraw = true)
+    {
+        if (color is null)
+        {
+            var buffer = new byte[3];
+            _rnd.NextBytes(buffer);
+            
+            color = Color.FromRgb(buffer[0], buffer[1], buffer[2]);
+        }
+        
+        var function = new Function()
+        {
+            Input = string.Empty,
+            Color = color.Value
+        };
+
+        var inputFunction = new InputFunction(function);
+        
+        _functions.Add(inputFunction);
+
+        if(redraw) await Redraw();
+    }
+
+    private async Task RemoveFunction(int index, bool redraw = true)
+    {
+        var function = _functions[index];
+        
+        _functions.RemoveAt(index);
+
+        if(redraw) await Redraw();
+    }
+    
+    private async Task FunctionInputChanged(ChangeEventArgs args, int functionIndex)
+    {
+        string? input = args.Value?.ToString();
+        
+        var function = _functions[functionIndex];
+        
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            await RemoveFunction(functionIndex);
+            return;
+        }
+        
+        function.Function.Input = input;
+
+        await Redraw();
+    }
+    
+    private async Task OriginXInputChanged(ChangeEventArgs args)
+    {
+        originPointX = int.Parse(args.Value?.ToString());
+        
+        await Redraw();
+    }
+    
+    private async Task OriginYInputChanged(ChangeEventArgs args)
+    {
+        originPointY = int.Parse(args.Value?.ToString());
+        
+        await Redraw();
+    }
+    
+    private async Task ScaleInputChanged(ChangeEventArgs args)
+    {
+        scale = double.Parse(args.Value?.ToString());
+        
+        await Redraw();
+    }
+    
+    private async Task FunctionColorChanged(ChangeEventArgs args, int functionIndex)
+    {
+        string? colorHex = args.Value?.ToString();
+        
+        var function = _functions[functionIndex];
+
+        if (string.IsNullOrWhiteSpace(colorHex) || !Color.TryParseHex(colorHex, out Color color))
+        {
+            function.IsIncorrectInput = true;
+            return;
+        }
+
+        function.Function.Color = color;
+
+        await Redraw();
+    }
+
+    private async Task Redraw(bool getSizeFromCanvas = false)
+    {
+        string sizeSourceElementId = getSizeFromCanvas ? "canvas-container" : "canvas-image";
+        
+        var size = await Js.GetCanvasSize(sizeSourceElementId);
+
+        int width = (int)size.Width;
+        int height = (int)size.Height;
+        Point origin;
+        if (originPointX is null || originPointY is null)
+        {
+            origin = new(width / 2, height / 2);
+            originPointX = origin.X;
+            originPointY = origin.Y;
+        }
+        else
+        {
+            origin = new Point(originPointX.Value, originPointY.Value);
+        }
+
+        UpdateFunctions();
+        
+        Canvas.Draw(width, height, origin, scale);
+        string imageBase64 = Canvas.SaveAsBase64();
+        
+        await Js.SetImage("canvas-image", imageBase64);
+    }
+
+    private void UpdateFunctions()
+    {
+        Canvas.ClearFunctions();
+        
+        foreach (var inputFunction in _functions)
+        {
+            var function = inputFunction.Function;
+            if (!string.IsNullOrWhiteSpace(function.Input))
+            {
+                Canvas.AddFunction(function);
+            }
+        }
+    }
+
+    private class InputFunction(Function function, bool isIncorrectInput = false)
+    {
+        public Function Function { get; set; } = function;
+        public bool IsIncorrectInput { get; set; } = isIncorrectInput;
+    }
+}

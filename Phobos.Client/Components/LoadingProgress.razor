@@ -1,0 +1,21 @@
+﻿@if (!OperatingSystem.IsBrowser())
+{
+    <HeadContent>
+        <link rel="stylesheet" href="loading-progress.css"/>
+    </HeadContent>
+    
+    <div class="is-flex is-justify-content-center is-align-items-center is-flex-wrap-nowrap">
+        <div class="loading-progress-text">
+            Loading: 
+        </div>
+    </div>
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+}
