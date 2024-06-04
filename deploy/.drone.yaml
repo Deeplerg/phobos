@@ -1,0 +1,281 @@
+---
+kind: pipeline
+type: kubernetes
+name: prod-build-push
+
+steps:
+  - name: build-push
+    image: gcr.io/kaniko-project/executor:debug
+    environment:
+      USERNAME:
+        from_secret: registry_username
+      PASSWORD:
+        from_secret: registry_password
+      REGISTRY:
+        from_secret: registry_address
+      CA_CERT:
+        from_secret: registry_ca_cert
+    commands:
+      - printf '%b\n' "$CA_CERT" > "/kaniko/ssl/certs/additional-ca-cert-bundle.crt"
+
+      - COMMIT=${DRONE_COMMIT_SHA:0:8}
+      - TAG=prod-$COMMIT
+      - FULL_IMAGE_NAME=$REGISTRY/phobos:$TAG
+
+      - AUTH=$(echo -n $USERNAME:$PASSWORD | base64)
+
+      - |
+        JSON="{ \"auths\": { \"$REGISTRY\": { \"auth\": \"$AUTH\" } } }"
+      - echo $JSON > "/kaniko/.docker/config.json"
+
+      - /kaniko/executor --destination="$FULL_IMAGE_NAME" --context="." --dockerfile="/deploy/Dockerfile.Phobos" --cache="true" --cache-repo="$REGISTRY/phobos/cache" --cache-copy-layers="true" --cache-run-layers="true"
+
+  - name: clone-infrastructure
+    image: alpine/git
+    commands:
+      - git clone https://github.com/Deeplerg/phobos-infra
+
+  - name: edit-kustomization
+    image: registry.k8s.io/kustomize/kustomize:v5.0.0
+    environment:
+      REGISTRY:
+        from_secret: registry_address
+    commands:
+      - COMMIT=${DRONE_COMMIT_SHA:0:8}
+      - TAG=prod-$COMMIT
+      - FULL_IMAGE_NAME=$REGISTRY/phobos:$TAG
+
+      - cd phobos-infra/kustomization/prod
+      - kustomize edit set image phobos-image-name=$FULL_IMAGE_NAME
+
+  - name: push-infrastructure-changes
+    image: alpine/git
+    commands:
+      - cd phobos-infra
+      - git checkout main
+      - git config user.email "drone@deeplerg.dev"
+      - git config user.name "Drone"
+      - git add .
+      - git commit -am "Update image tags" --author="Drone <drone@deeplerg.dev>"
+      - git push
+
+
+
+trigger:
+  branch:
+    - main
+  event:
+    include:
+      - promote
+      - rollback
+#      - push # Hmmmmm... Do we really have to promote this?
+  target:
+    - production
+
+
+
+---
+kind: pipeline
+type: kubernetes
+name: prod-build-only
+
+steps:
+  - name: build
+    image: gcr.io/kaniko-project/executor:debug
+    commands:
+      - /kaniko/executor --no-push --context="." --dockerfile="/deploy/Dockerfile.Phobos"
+
+trigger:
+  branch:
+    - main
+  event:
+    - pull_request
+    - push # honestly this is only for the cool looking green checks :P
+           # oh wait! also if you want to simply push into prod... 
+           # ... which isn't a good idea.
+
+
+---
+kind: pipeline
+type: kubernetes
+name: dev-build-push
+
+steps:
+  - name: build-push
+    image: gcr.io/kaniko-project/executor:debug
+    environment:
+      USERNAME:
+        from_secret: registry_username
+      PASSWORD:
+        from_secret: registry_password
+      REGISTRY:
+        from_secret: registry_address
+      CA_CERT:
+        from_secret: registry_ca_cert
+    commands:
+      - printf '%b\n' "$CA_CERT" > "/kaniko/ssl/certs/additional-ca-cert-bundle.crt"
+
+      - COMMIT=${DRONE_COMMIT_SHA:0:8}
+      - RAW_BRANCH=${DRONE_BRANCH}
+      - BRANCH=$(echo $RAW_BRANCH | sed 's/[^a-zA-Z0-9]/-/g')
+      - TAG=$BRANCH-$COMMIT
+      - FULL_IMAGE_NAME=$REGISTRY/phobos:$TAG
+
+      - AUTH=$(echo -n $USERNAME:$PASSWORD | base64)
+
+      - |
+        JSON="{ \"auths\": { \"$REGISTRY\": { \"auth\": \"$AUTH\" } } }"
+      - echo $JSON > "/kaniko/.docker/config.json"
+
+      - /kaniko/executor --destination="$FULL_IMAGE_NAME" --context="." --dockerfile="/deploy/Dockerfile.Phobos" --cache="true" --cache-repo="$REGISTRY/phobos/cache" --cache-copy-layers="true" --cache-run-layers="true"
+
+  - name: clone-infrastructure
+    image: alpine/git
+    commands:
+      - git clone https://github.com/Deeplerg/phobos-infra
+
+  - name: edit-kustomization
+    image: registry.k8s.io/kustomize/kustomize:v5.0.0
+    environment:
+      REGISTRY:
+        from_secret: registry_address
+    commands:
+      - COMMIT=${DRONE_COMMIT_SHA:0:8}
+      - RAW_BRANCH=${DRONE_BRANCH}
+      - BRANCH=$(echo $RAW_BRANCH | sed 's/[^a-zA-Z0-9]/-/g')
+      - TAG=$BRANCH-$COMMIT
+      - FULL_IMAGE_NAME=$REGISTRY/phobos:$TAG
+        
+      - cd phobos-infra/kustomization/$BRANCH
+      - kustomize edit set image phobos-image-name=$FULL_IMAGE_NAME
+
+  - name: push-infrastructure-changes
+    image: alpine/git
+    commands:
+      - cd phobos-infra
+      - git checkout main
+      - git config user.email "drone@deeplerg.dev"
+      - git config user.name "Drone"
+      - git add .
+      - git commit -am "Update image tags" --author="Drone <drone@deeplerg.dev>"
+      - git push
+
+
+
+trigger:
+  branch:
+    - dev
+  event:
+    - push
+
+
+
+---
+kind: pipeline
+type: kubernetes
+name: dev-build-only
+
+steps:
+  - name: build
+    image: gcr.io/kaniko-project/executor:debug
+    commands:
+      - /kaniko/executor --no-push --context="." --dockerfile="/deploy/Dockerfile.Phobos"
+
+trigger:
+  branch:
+    - dev
+  event:
+    - pull_request
+
+
+---
+kind: pipeline
+type: kubernetes
+name: wip-cicd-build-push
+
+steps: 
+  - name: build-push
+    image: gcr.io/kaniko-project/executor:debug
+    environment:
+      USERNAME:
+        from_secret: registry_username
+      PASSWORD:
+        from_secret: registry_password
+      REGISTRY:
+        from_secret: registry_address
+      CA_CERT:
+        from_secret: registry_ca_cert
+    commands:
+      - printf '%b\n' "$CA_CERT" > "/kaniko/ssl/certs/additional-ca-cert-bundle.crt"
+
+      - COMMIT=${DRONE_COMMIT_SHA:0:8}
+      - RAW_BRANCH=${DRONE_BRANCH}
+      - BRANCH=$(echo $RAW_BRANCH | sed 's/[^a-zA-Z0-9]/-/g')
+      - TAG=$BRANCH-$COMMIT
+      - FULL_IMAGE_NAME=$REGISTRY/phobos:$TAG
+
+      - AUTH=$(echo -n $USERNAME:$PASSWORD | base64)
+
+      - |
+        JSON="{ \"auths\": { \"$REGISTRY\": { \"auth\": \"$AUTH\" } } }"
+      - echo $JSON > "/kaniko/.docker/config.json"
+
+      - /kaniko/executor --destination="$FULL_IMAGE_NAME" --context="." --dockerfile="/deploy/Dockerfile.Phobos" --cache="true" --cache-repo="$REGISTRY/phobos/cache" --cache-copy-layers="true" --cache-run-layers="true"
+
+
+  - name: clone-infrastructure
+    image: alpine/git
+    commands:
+      - git clone https://github.com/Deeplerg/phobos-infra
+  
+  - name: edit-kustomization
+    image: registry.k8s.io/kustomize/kustomize:v5.0.0
+    environment:
+      REGISTRY:
+        from_secret: registry_address
+    commands:
+      - COMMIT=${DRONE_COMMIT_SHA:0:8}
+      - RAW_BRANCH=${DRONE_BRANCH}
+      - BRANCH=$(echo $RAW_BRANCH | sed 's/[^a-zA-Z0-9]/-/g')
+      - TAG=$BRANCH-$COMMIT
+      - FULL_IMAGE_NAME=$REGISTRY/phobos:$TAG
+        
+      - cd phobos-infra/kustomization/$BRANCH
+      - kustomize edit set image phobos-image-name=$FULL_IMAGE_NAME
+    
+  - name: push-infrastructure-changes
+    image: alpine/git
+    commands:
+      - cd phobos-infra
+      - git checkout main
+      - git config user.email "drone@deeplerg.dev"
+      - git config user.name "Drone"
+      - git add .
+      - git commit -am "Update image tags" --author="Drone <drone@deeplerg.dev>"
+      - git push
+
+    
+
+trigger:
+  branch:
+    - wip-cicd
+  event:
+    - push
+
+
+---
+kind: pipeline
+type: kubernetes
+name: wip-cicd-build-only
+
+steps:
+  - name: build
+    image: gcr.io/kaniko-project/executor:debug
+    commands:
+      - /kaniko/executor --no-push --context="." --dockerfile="/deploy/Dockerfile.Phobos"
+
+trigger:
+  branch:
+    - wip-cicd
+  event:
+    - pull_request
