@@ -1,4 +1,8 @@
-﻿@using Phobos.Core
+﻿@using Phobos.Client.JsInterop
+@using Phobos.Client.JsInterop.Events.MouseMove
+@using Phobos.Client.JsInterop.Events.Resized
+@using Phobos.Client.JsInterop.Events.Wheel
+@using Phobos.Core
 @using Phobos.Core.Drawing
 @using SixLabors.ImageSharp
 @using Point = System.Drawing.Point
@@ -6,6 +10,9 @@
 @inject ILogger<Calculator> Logger;
 @inject GraphCanvas Canvas;
 @inject JsInteropService Js;
+@inject MouseMoveJsEventHandler MouseMoveHandler;
+@inject ResizedJsEventHandler ResizedHandler;
+@inject WheelJsEventHandler WheelHandler;
 
 <LoadingProgress>
     <main>
@@ -55,37 +62,14 @@
                         </button>
                     </p>
                 </div>
-                <div class="panel-block function-input-block">
-                    <p class="control is-flex is-justify-content-space-evenly is-align-items-center">
-                        <input
-                            class="input mx-1"
-                            type="text"
-                            placeholder="Loading..."
-                            value="@(originPointX)"
-                            @onchange=@(args => OriginXInputChanged(args))/>
-
-                        <input
-                            class="input mx-1"
-                            type="text"
-                            placeholder="Loading..."
-                            value="@(originPointY)"
-                            @onchange=@(args => OriginYInputChanged(args))/>
-
-                        <input
-                            class="input mx-1"
-                            type="text"
-                            placeholder="Loading..."
-                            value="@(scale)"
-                            @onchange=@(args => ScaleInputChanged(args))/>
-                    </p>
-                </div>
             </nav>
             <div class="plane is-flex-grow-1" id="canvas-container">
                 <img 
                     class="plane is-flex-grow-1 has-background-grey" 
                     src="@_imageBase64" 
                     alt="Plane" 
-                    id="canvas-image"/>
+                    id="canvas-image"
+                    draggable="false"/>
             </div>
         </div>
     </main>
@@ -95,9 +79,10 @@
     private readonly List<InputFunction> _functions = new();
     private string _imageBase64 = string.Empty;
     private readonly Random _rnd = new();
-    private int? originPointX;
-    private int? originPointY;
-    private double scale = 1;
+    private double _scale = 1;
+    private Point? _currentOrigin = null;
+    private Point? _currentMousePosition = null;
+    private Point? _oldMousePosition = null;
     
     protected override async Task OnInitializedAsync()
     {
@@ -108,9 +93,59 @@
     {
         if (firstRender)
         {
+            await RegisterJsEventHandlers();
+            SubscribeToJsEvents();
+            await Js.RegisterDotNetEventHandlers();
+            
             await Redraw(getSizeFromCanvas: true);
             StateHasChanged();
         }
+    }
+
+    private void SubscribeToJsEvents()
+    {
+        MouseMoveHandler.Subscribe(OnMouseMove);
+        ResizedHandler.Subscribe(OnResized);
+        WheelHandler.Subscribe(OnWheel);
+    }
+
+    private async Task RegisterJsEventHandlers()
+    {
+        await Js.RegisterJsMouseEventHandlers("canvas-image");
+        await Js.RegisterJsResizeHandlers("canvas-container");
+        await Js.RegisterJsWheelHandlers("canvas-image");
+    }
+    
+    private async Task OnMouseMove(MouseMoveJsEvent @event)
+    {
+        _oldMousePosition = _currentMousePosition;
+        _currentMousePosition = new((int)@event.ClientX, (int)@event.ClientY);;
+        
+        if (@event.IsDown)
+        {
+            await Redraw();
+        }
+    }
+    
+    private async Task OnResized(ResizedJsEvent @event)
+    {
+        await Redraw();
+    }
+
+    private async Task OnWheel(WheelJsEvent @event)
+    {
+        if (@event.DeltaY > 0)
+        {
+            Logger.LogInformation("Delta > 0, scrolling down, zooming out!");
+            _scale -= 0.1;
+        }
+        else
+        {
+            Logger.LogInformation("Delta < 0, scrolling up, zooming in!");
+            _scale += 0.1;
+        }
+
+        await Redraw();
     }
 
     private async Task AddFunction(Color? color = null, bool redraw = true)
@@ -162,27 +197,6 @@
         await Redraw();
     }
     
-    private async Task OriginXInputChanged(ChangeEventArgs args)
-    {
-        originPointX = int.Parse(args.Value?.ToString());
-        
-        await Redraw();
-    }
-    
-    private async Task OriginYInputChanged(ChangeEventArgs args)
-    {
-        originPointY = int.Parse(args.Value?.ToString());
-        
-        await Redraw();
-    }
-    
-    private async Task ScaleInputChanged(ChangeEventArgs args)
-    {
-        scale = double.Parse(args.Value?.ToString());
-        
-        await Redraw();
-    }
-    
     private async Task FunctionColorChanged(ChangeEventArgs args, int functionIndex)
     {
         string? colorHex = args.Value?.ToString();
@@ -208,21 +222,25 @@
 
         int width = (int)size.Width;
         int height = (int)size.Height;
-        Point origin;
-        if (originPointX is null || originPointY is null)
+
+        if (_currentOrigin is null || _currentMousePosition is null || _oldMousePosition is null)
         {
-            origin = new(width / 2, height / 2);
-            originPointX = origin.X;
-            originPointY = origin.Y;
+            _currentOrigin = new(width / 2, height / 2);
         }
         else
         {
-            origin = new Point(originPointX.Value, originPointY.Value);
+            int mouseMovedX = _currentMousePosition.Value.X - _oldMousePosition.Value.X;
+            int mouseMovedY = _currentMousePosition.Value.Y - _oldMousePosition.Value.Y;
+
+            int newX = _currentOrigin.Value.X + mouseMovedX;
+            int newY = _currentOrigin.Value.Y + mouseMovedY;
+            
+            _currentOrigin = new Point(newX, newY);
         }
 
         UpdateFunctions();
         
-        Canvas.Draw(width, height, origin, scale);
+        Canvas.Draw(width, height, _currentOrigin.Value, _scale);
         string imageBase64 = Canvas.SaveAsBase64();
         
         await Js.SetImage("canvas-image", imageBase64);

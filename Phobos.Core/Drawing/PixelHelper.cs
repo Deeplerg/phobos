@@ -39,11 +39,14 @@ static class PixelHelper
     
     public static int CalculateStep(double scaleFactor, int pixelsPerValue)
     {
+        return (int)(pixelsPerValue * scaleFactor); // I give up
+        
         int step = pixelsPerValue;
         if (scaleFactor * step >= step)
         {
-            //step = step + (int)((scaleFactor * step) % step);
-            step = (int)(step * scaleFactor / Math.Truncate(scaleFactor));
+            //step = (int)(step * (1d + Math.Truncate(scaleFactor)));
+            step = step + (int)((scaleFactor * step) % step);
+            //step = (int)(step * scaleFactor / Math.Truncate(scaleFactor));
             //step = (int)((step * scaleFactor - origin.Y + image.Height) / (Math.Truncate(scaleFactor) - (Math.Pow(2, Math.Floor(Math.Log(scaleFactor, 2)))) + 1));
             //step = (int)(step + (step * scaleFactor - step * Math.Truncate(scaleFactor)));
             //step = (int)(step * (scaleFactor / Math.Pow(2, Math.Floor(Math.Log(scaleFactor, 2)))));
@@ -53,8 +56,8 @@ static class PixelHelper
         }
         else
         {
-            //step = (step * 2) - (int)((1 / scaleFactor * step) % step);
-            step = (int)(step * (1 / scaleFactor) / Math.Truncate(1 / scaleFactor));
+            step = (step * 2) - (int)((1 / scaleFactor * step) % step);
+            //step = (int)(step * (1 / scaleFactor) / Math.Truncate(1 / scaleFactor));
         }
 
         return step;

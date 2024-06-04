@@ -1,4 +1,8 @@
 ﻿using ExpressionCalculator;
+using Phobos.Client.JsInterop;
+using Phobos.Client.JsInterop.Events.MouseMove;
+using Phobos.Client.JsInterop.Events.Resized;
+using Phobos.Client.JsInterop.Events.Wheel;
 using Phobos.Core.Drawing;
 using Phobos.Core.Drawing.Components;
 using Phobos.Core.Drawing.Pipeline;
@@ -46,6 +50,24 @@ public static class ServiceCollectionExtensions
             return calculatorBuilder.Build();
         });
 
+        return services;
+    }
+
+    public static IServiceCollection AddJsServices(this IServiceCollection services)
+    {
+        services.AddJsEventHandlers();
+        
+        services.AddScoped<JsInteropService>();
+
+        return services;
+    }
+    
+    public static IServiceCollection AddJsEventHandlers(this IServiceCollection services)
+    {
+        services.AddScoped<MouseMoveJsEventHandler>();
+        services.AddScoped<ResizedJsEventHandler>();
+        services.AddScoped<WheelJsEventHandler>();
+        
         return services;
     }
 }

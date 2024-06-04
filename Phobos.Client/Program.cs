@@ -23,7 +23,7 @@ builder.Services.Configure<DrawingConfigurationOptions>(
 builder.Services.AddExpressionCalculator();
 builder.Services.AddDrawingServices();
 
-builder.Services.AddScoped<JsInteropService>();
+builder.Services.AddJsServices();
 
 await builder.Build().RunAsync();
 
