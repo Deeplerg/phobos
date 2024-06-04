@@ -193,17 +193,7 @@ kind: pipeline
 type: kubernetes
 name: wip-cicd-build-push
 
-steps:
-  - name: image-warmer
-    image: gcr.io/kaniko-project/warmer:latest
-    volumes:
-      - name: warmer-cache
-        path: /kaniko/cache
-    commands:
-      - echo "123"
-      - sleep 300
-      - /kaniko/warmer --dockerfile="/deploy/Dockerfile.Phobos" --cache-dir="/kaniko/cache"
-    
+steps: 
   - name: build-push
     image: gcr.io/kaniko-project/executor:debug
     environment:
@@ -215,9 +205,6 @@ steps:
         from_secret: registry_address
       CA_CERT:
         from_secret: registry_ca_cert
-    volumes:
-      - name: warmer-cache
-        path: /kaniko/cache
     commands:
       - printf '%b\n' "$CA_CERT" > "/kaniko/ssl/certs/additional-ca-cert-bundle.crt"
 
@@ -233,7 +220,7 @@ steps:
         JSON="{ \"auths\": { \"$REGISTRY\": { \"auth\": \"$AUTH\" } } }"
       - echo $JSON > "/kaniko/.docker/config.json"
 
-      - /kaniko/executor --destination="$FULL_IMAGE_NAME" --context="." --dockerfile="/deploy/Dockerfile.Phobos" --cache="true" --cache-repo="$REGISTRY/phobos/cache" --cache-copy-layers="true" --cache-run-layers="true" --cache-dir="/kaniko/cache"
+      - /kaniko/executor --destination="$FULL_IMAGE_NAME" --context="." --dockerfile="/deploy/Dockerfile.Phobos" --cache="true" --cache-repo="$REGISTRY/phobos/cache" --cache-copy-layers="true" --cache-run-layers="true"
 
 
   - name: clone-infrastructure
@@ -274,12 +261,6 @@ trigger:
     - wip-cicd
   event:
     - push
-
-
-volumes:
-  - name: warmer-cache
-    claim:
-      name: kaniko-warmer-pvc
 
 
 ---
