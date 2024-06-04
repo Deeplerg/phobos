@@ -9,6 +9,8 @@ RUN dotnet restore "Phobos.Web/Phobos.Web.csproj" --runtime linux-musl-x64
 RUN dotnet restore "Phobos.Core/Phobos.Core.csproj" --runtime linux-musl-x64
 RUN dotnet restore "Phobos.Client/Phobos.Client.csproj" --runtime linux-musl-x64
 
+dotnet workload restore "Phobos.Client/Phobos.Client.csproj"
+
 COPY . .
 RUN dotnet publish "Phobos.Web/Phobos.Web.csproj"  \
     -c Release  \
