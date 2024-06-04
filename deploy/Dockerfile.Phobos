@@ -24,7 +24,7 @@ RUN dotnet publish "Phobos.Web/Phobos.Web.csproj"  \
     --no-restore 
 #useapphost=false is because we don't need a native executable
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS final
 WORKDIR /app
 # dotnet 8 updated the default port: https://learn.microsoft.com/en-us/dotnet/core/compatibility/containers/8.0/aspnet-port
 EXPOSE 8080
