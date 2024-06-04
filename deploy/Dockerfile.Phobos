@@ -14,6 +14,7 @@ RUN dotnet publish "Phobos.Web/Phobos.Web.csproj"  \
     -c Release  \
     -o /app/publish  \
     -p:UseAppHost=false \
+    -p:RunAOTCompilation=true \
     --runtime linux-musl-x64 \
     --no-restore 
 #useapphost=false is because we don't need a native executable
