@@ -1,0 +1,28 @@
+﻿FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS publish
+WORKDIR /src
+
+COPY ["Phobos.Web/Phobos.Web.csproj", "Phobos.Web/"]
+COPY ["Phobos.Core/Phobos.Core.csproj", "Phobos.Core/"]
+COPY ["Phobos.Client/Phobos.Client.csproj", "Phobos.Client/"]
+
+RUN dotnet restore "Phobos.Web/Phobos.Web.csproj" --runtime linux-musl-x64
+RUN dotnet restore "Phobos.Core/Phobos.Core.csproj" --runtime linux-musl-x64
+RUN dotnet restore "Phobos.Client/Phobos.Client.csproj" --runtime linux-musl-x64
+
+COPY . .
+RUN dotnet publish "Phobos.Web/Phobos.Web.csproj"  \
+    -c Release  \
+    -o /app/publish  \
+    -p:UseAppHost=false \
+    --runtime linux-musl-x64 \
+    --no-restore 
+#useapphost=false is because we don't need a native executable
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS final
+WORKDIR /app
+# dotnet 8 updated the default port: https://learn.microsoft.com/en-us/dotnet/core/compatibility/containers/8.0/aspnet-port
+EXPOSE 8080
+COPY --from=publish /app/publish .
+# non-root user in dotnet 8
+USER app
+ENTRYPOINT ["dotnet", "Phobos.Web.dll"]
